@@ -1,11 +1,9 @@
-
 function proceed(p){
 //событие,происходящее с вер-тью p
-    var ans = Math.random() < p;
-    return ans;
+    return  Math.random() < p;
 }
 
-
+//----------------канал----------------------
 
 function Chanel(pi){
     //вероятность необработки заявки
@@ -20,26 +18,25 @@ Chanel.prototype = {
         this.isEmpty = false;
     },
     handling : function(){
+        //обработка заявки с вероятностью закончить на этом
+        //такте = 1 - pi
         this.isEmpty = proceed(1 - this.pi);
     }
 };
 
-function stateTransition(source,chanels){
-    //обработка заявлений,освобожд каналы помечаются
-    var len = chanels.length
-    for(var i = 0;i < len;i++)
-        if(!chanels[i].isEmpty){
-            chanels[i].handling();
-        }
-    //разблокирвать источник,если освободился хоьб 1 канал
-    if(source.isBlocked && chanels.some(function(el,i,arr){return el.isEmpty;}))
-        source.unblock();
-}
 
+//---------------источник--------------------
 
-function Source(){
-    //флаг блокировки источника
-    this.isBlocked = false;
+function Source(cycles){
+    //число тактов до появления заявки на выходе источника
+    //1,2,0(блокировка)
+    this.cycles = cycles;
+    //значение блокировки
+    this.blockCycle = 0;
+    //цикл,на котором вырабатывается заявка
+    this.workingCycle = 1;
+    //макс число тактов до появл заявки
+    this.nCycles = cycles;
     //кол-во блокировок
     this.blockCount = 0;
 };
@@ -61,16 +58,26 @@ Source.prototype = {
     },
     unblock : function(){
         //разблокировать источник
-        this.isBlocked = false;
+        //кол-во тактов до появл заявки = 2(максимальный)
+        this.cycles = this.nCycles;
     },
 
     blockProb : function(clock){//вероятность влокировки
         return this.blockCount / clock;
     }
+    ,
+    setMaxCycle : function(){//поставить отсчёт до выработки заявки
+        // на макс. значение
+        this.cycles = this.nCycles;
+    },
+    isBlocked : function(){//проверка на заблокированность очереди
+        return this.cycle === this.blockCycle;
+    }
+
 };
 
 
-
+//------------------очередь-----------------
 function Queue(maxEl){
     //кол-во ел-тов в очереди
     this.elNum = 0;
@@ -83,7 +90,7 @@ function Queue(maxEl){
 Queue.prototype = {
 
     blockSource : function(source){   //блокировка источника
-        source.isBlocked = true;
+        source.cycles = source.blockCycle;
         //увелич число блокировок источника(цель исслед)
         source.blockCount++;
     },
@@ -121,7 +128,17 @@ Queue.prototype = {
    }
 };
 
-
+function stateTransition(source,chanels){
+    //обработка заявлений,освобожд каналы помечаются
+    var len = chanels.length
+    for(var i = 0;i < len;i++)
+        if(!chanels[i].isEmpty){
+            chanels[i].handling();
+        }
+    //разблокирвать источник,если освободился хоть бы 1 канал
+    if(source.cycles === source.blockCycle && chanels.some(function(el,i,arr){return el.isEmpty;}))
+        source.unblock();
+}
 
 //эмуляция СМО
 function emulation(chanel1,chanel2,cl,queueLen,lockProb){
@@ -131,21 +148,40 @@ function emulation(chanel1,chanel2,cl,queueLen,lockProb){
     var clock = parseFloat( cl.text);
 
     //эмуляция работы СМО
-    var source = new Source();
+    //число тактов до появления заявки на выходе ист-ка = 2
+    var source = new Source(2);
 
     //макс длина очереди = 1
     var queue = new Queue(1);
     //2 канала с вер отказа pi_1 и pi_2
     var chanels = [ new Chanel(pi_1),new Chanel(pi_2) ];
-    console.log(chanels.length);
+
+
+
+    //генератор тактов
     for(var i = 0;i < clock;i++)
     {
-        //попытаться разгрузить очередь
+        //попытаться разгрузить очередь,если таковая имеется
         queue.tryToServe(chanels);
 
-        if(i % 2 === 0 && ( !source.isBlocked ))
+        if(source.cycles === source.workingCycle)
+        {//время выработки заявки
+
             //заявка каждые 2 такта,либо обслуж либо в очередь
             source.appToService(chanels,queue);
+
+            //проверка на возможную блокировку
+            if(!source.isBlocked())
+                //начать отсчёт заново
+                source.setMaxCycle();
+        }
+        else if (source.cycles !== source.blockCycle)
+            source.cycles--;    // отсчитывать время до заявки
+
+        //вывод состояния на консоль
+        /*console.log(queue.elNum + " " + source.cycles + " " + (!chanels[0].isEmpty + 0) +
+                    " " + ( !chanels[1].isEmpty + 0) );
+        */
 
         //подсчёт суммы длинн очереди на каждом такте
         queue.sumCurElNum();
